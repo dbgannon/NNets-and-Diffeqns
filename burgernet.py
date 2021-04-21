@@ -49,15 +49,15 @@ class Net(nn.Module):
         self.mi2 = nn.Linear(80,40)
         self.ol  = nn.Linear(40,1)
         self.tn  = nn.Tanh()
-
+        self.layers = nn.ModuleList([self.il, self.mi, self.mi1, self.mi2, self.ol])
+        
+     
     def forward(self,x,t):
         u = torch.cat((x, t), 1)
-        hidden1 = self.il(u)
-        hidden2 = self.mi(self.tn(hidden1))
-        hidden2a = self.mi1(self.tn(hidden2))
-        hidden3 = self.mi2(self.tn(hidden2a))
-        out =     self.ol(self.tn(hidden3))
-        return out
+        u = self.il(u)
+        for x in self.layers[1:]:
+            u = x(self.tn(u))
+        return u
 
 def flat(x):
     m = x.shape[0]
@@ -128,15 +128,17 @@ for i in range(len(ivt)):
 # so it describes the interior
 
 mynet = Net()
+#if you want to train for more iterations after the first 20000 epochs load the
+#model and go from there
+#mynet.load_state_dict(torch.load('burgmodel'))
+print(mynet.parameters())
 epocs = 200000
 btch = m
 btch2 = bb
 losstot = np.zeros(len(m))
 losstot2 = np.zeros(len(bb))
 loss_fn = nn.MSELoss()
-#use two optimizers.  learing rates seem to work.
 optimizer = optim.SGD(mynet.parameters(), lr=0.001)
-optimizer2 = optim.SGD(mynet.parameters(), lr=0.0005)
 
 loss_fn = nn.MSELoss()
 for epoc in range(1, epocs+1):
@@ -147,18 +149,15 @@ for epoc in range(1, epocs+1):
         #pick a random interior batch
         bf = btch2[np.random.randint(0, len(bb))]
         optimizer.zero_grad()
-        optimizer2.zero_grad()
         outputs = mynet(b[0], b[1])
         outputsf = f(bf[0][0], bf[0][1])
         loss = loss_fn(outputs,b[2])
         loss2 = loss_fn(outputsf, bf[0][2])
         loss2tot += loss2
         losstot[i]= loss
-        losst = loss
-        loss.backward(retain_graph=True)
+        losst = loss + loss2
+        losst.backward(retain_graph=True)
         optimizer.step()
-        loss2.backward(retain_graph=True)
-        optimizer2.step()
     if epoc % 500 == 0:
         loss = 0.0
         for i in range(len(m)):
